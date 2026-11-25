@@ -306,7 +306,6 @@
                     <label class="flex items-center gap-2"><input type="checkbox" class="ai-type" value="mcq" checked> Trắc nghiệm</label>
                     <label class="flex items-center gap-2"><input type="checkbox" class="ai-type" value="true_false"> Đúng/Sai</label>
                     <label class="flex items-center gap-2"><input type="checkbox" class="ai-type" value="fill_blank"> Điền khuyết</label>
-                    <label class="flex items-center gap-2"><input type="checkbox" class="ai-type" value="code_reading"> Đọc code</label>
                 </div>
             </div>
 

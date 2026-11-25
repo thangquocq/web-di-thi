@@ -39,7 +39,7 @@ class GeminiService
         }
 
         // Chuẩn hóa danh sách dạng bài được yêu cầu (mặc định: trắc nghiệm nhiều lựa chọn)
-        $allowed = ['mcq', 'true_false', 'fill_blank', 'code_reading'];
+        $allowed = ['mcq', 'true_false', 'fill_blank'];
         $types = array_values(array_intersect(array_map('strtolower', $types), $allowed));
         if (empty($types)) {
             $types = ['mcq'];
@@ -51,12 +51,10 @@ class GeminiService
 BẮT BUỘC TUÂN THỦ CÁC QUY TẮC SAU:
 1. " . ($documentText ? "CHỈ ĐƯỢC PHÉP sử dụng kiến thức có TRONG TÀI LIỆU CUNG CẤP BÊN DƯỚI. Tuyệt đối không được bịa đặt (hallucinate) hay sử dụng kiến thức bên ngoài nếu tài liệu không đề cập." : "Đảm bảo kiến thức chính xác tuyệt đối theo chuẩn học thuật.") . "
 2. Format output trả về BẮT BUỘC phải là một mảng JSON nguyên chất, KHÔNG bọc trong markdown block (như ```json ... ```). Hãy bắt đầu bằng dấu [ và kết thúc bằng dấu ].
-3. Mỗi object là MỘT câu hỏi, BẮT BUỘC có trường \"question_type\" là một trong: mcq, true_false, fill_blank, code_reading, và trường \"explanation\" (giải thích ngắn gọn vì sao đáp án đúng). Tùy dạng bài, thêm các trường:
+3. Mỗi object là MỘT câu hỏi, BẮT BUỘC có trường \"question_type\" là một trong: mcq, true_false, fill_blank, và trường \"explanation\" (giải thích ngắn gọn vì sao đáp án đúng). Tùy dạng bài, thêm các trường:
    - mcq: \"content\", \"option_a\", \"option_b\", \"option_c\", \"option_d\", \"correct_answer\" (một chữ in hoa A/B/C/D).
    - true_false: \"content\" (một mệnh đề), \"option_a\" = \"Đúng\", \"option_b\" = \"Sai\", \"correct_answer\" = \"A\" hoặc \"B\".
-   - fill_blank: \"content\" (câu có chỗ trống thể hiện bằng dấu ___), \"correct_text\" (đáp án đúng; nếu chấp nhận nhiều cách viết thì ngăn cách bằng dấu |). KHÔNG cần option.
-   - code_reading: \"content\" chứa một đoạn code viết TRỰC TIẾP trên các dòng riêng (KHÔNG dùng dấu ``` hay thẻ HTML), 4 lựa chọn \"option_a\"..\"option_d\" là các kết quả/giải thích có thể, \"correct_answer\" là chữ in hoa A/B/C/D.
-4. Chỉ sinh các dạng bài nằm trong danh sách yêu cầu: {$typesList}.
+   - fill_blank: \"content\" (câu có chỗ trống thể hiện bằng dấu ___), \"correct_text\" (đáp án đúng; nếu chấp nhận nhiều cách viết thì ngăn cách bằng dấu |). KHÔNG cần option.4. Chỉ sinh các dạng bài nằm trong danh sách yêu cầu: {$typesList}.
 5. TUYỆT ĐỐI KHÔNG dùng dấu ``` (ba dấu huyền) ở bất kỳ đâu. Chỉ trả về MẢNG JSON THUẦN, ký tự đầu tiên là [ và ký tự cuối là ].";
 
         $userPrompt = "Chủ đề: $topic\nSố lượng câu hỏi: $count\nCác dạng bài yêu cầu: {$typesList}.\n{$difficultyLine}\n";
@@ -179,7 +177,8 @@ BẮT BUỘC TUÂN THỦ CÁC QUY TẮC SAU:
             }
 
             $type = strtolower(trim((string) ($item['question_type'] ?? 'mcq')));
-            if (! in_array($type, ['mcq', 'true_false', 'fill_blank', 'code_reading'], true)) {
+            // AI sinh câu hỏi không còn dạng "Đọc code": nếu model vẫn trả về code_reading thì coi như trắc nghiệm (cùng cấu trúc A-D)
+            if (! in_array($type, ['mcq', 'true_false', 'fill_blank'], true)) {
                 $type = 'mcq';
             }
 

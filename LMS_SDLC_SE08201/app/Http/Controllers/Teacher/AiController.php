@@ -24,7 +24,7 @@ class AiController extends Controller
             'count' => 'required|integer|min:1|max:50',
             'document' => 'nullable|file|mimes:txt,pdf,docx|max:5120', // 5MB max
             'types' => 'nullable|array',
-            'types.*' => 'in:mcq,true_false,fill_blank,code_reading',
+            'types.*' => 'in:mcq,true_false,fill_blank',
             'difficulty' => 'nullable|string|max:50',
         ]);
 
