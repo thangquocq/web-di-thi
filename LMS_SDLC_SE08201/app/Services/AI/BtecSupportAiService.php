@@ -562,9 +562,10 @@ QUY TẮC BẮT BUỘC (KHÔNG TRẢ LỜI CHUNG CHUNG, KHÔNG ĐIỀU HƯỚNG 
             $ch = curl_init();
             curl_setopt($ch, CURLOPT_URL, $url);
             curl_setopt($ch, CURLOPT_POST, true);
+            // cURL yêu cầu header dạng chuỗi "Tên: giá trị" (mảng key => value sẽ không gửi API key)
             curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Content-Type' => 'application/json',
-                'x-goog-api-key' => $this->apiKey,
+                'Content-Type: application/json',
+                'x-goog-api-key: ' . $this->apiKey,
             ]);
             curl_setopt($ch, CURLOPT_POSTFIELDS, $payloadJson);
             curl_setopt($ch, CURLOPT_TIMEOUT, 5);

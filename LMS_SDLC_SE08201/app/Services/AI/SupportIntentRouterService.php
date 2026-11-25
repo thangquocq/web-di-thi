@@ -25,6 +25,15 @@ class SupportIntentRouterService
         'SCHEDULE_CHANGE',
     ];
 
+    /** Thời gian chờ tối đa cho 1 provider (giây). */
+    private const PROVIDER_TIMEOUT_SECONDS = 3.5;
+
+    /** Tổng thời gian tối đa cho cả bước định tuyến (giây). */
+    private const TOTAL_BUDGET_SECONDS = 4.0;
+
+    /** Thời gian tạm bỏ qua provider sau khi lỗi/timeout (giây). */
+    private const BREAKER_TTL_SECONDS = 600;
+
     /**
      * Phân loại ý định câu hỏi bằng LLM (JSON structured output).
      * Trả về null nếu không cấu hình API key hoặc API lỗi/timeout.
@@ -76,9 +85,24 @@ Quy tắc:
 - Chỉ trả JSON thuần hợp lệ.
 PROMPT;
 
+        $startedAt = microtime(true);
+
         foreach ($providers as $provider) {
+            // Circuit breaker: provider vừa lỗi/timeout thì bỏ qua trong 10 phút, tránh mỗi câu hỏi mất thêm vài giây chờ vô ích.
+            $breakerKey = 'support_intent_router_down_' . md5($provider['key'] . '|' . $provider['model']);
+            if (! app()->runningUnitTests() && cache()->has($breakerKey)) {
+                continue;
+            }
+
+            // Tổng ngân sách thời gian cho bước định tuyến: hết ngân sách thì để Rule Engine xử lý.
+            $remaining = self::TOTAL_BUDGET_SECONDS - (microtime(true) - $startedAt);
+            if ($remaining < 1.0) {
+                break;
+            }
+
+            $succeeded = false;
             try {
-                $response = Http::connectTimeout(2.0)->timeout(3.2)
+                $response = Http::connectTimeout(2.0)->timeout(min(self::PROVIDER_TIMEOUT_SECONDS, $remaining))
                     ->withHeaders([
                         'Authorization' => 'Bearer ' . $provider['key'],
                         'Content-Type' => 'application/json',
@@ -93,24 +117,25 @@ PROMPT;
                         ],
                     ]);
 
-                if (! $response->successful()) {
-                    continue;
-                }
-
-                $content = $response->json('choices.0.message.content');
-                if (! is_string($content) || trim($content) === '') {
-                    continue;
-                }
-
-                $parsed = $this->parseJson($content);
-                if ($parsed !== null) {
-                    if (! app()->runningUnitTests()) {
-                        cache()->put($cacheKey, $parsed, 86400);
+                if ($response->successful()) {
+                    $succeeded = true;
+                    $content = $response->json('choices.0.message.content');
+                    $parsed = is_string($content) && trim($content) !== '' ? $this->parseJson($content) : null;
+                    if ($parsed !== null) {
+                        if (! app()->runningUnitTests()) {
+                            cache()->put($cacheKey, $parsed, 86400);
+                        }
+                        return $parsed;
                     }
-                    return $parsed;
+                } else {
+                    Log::info('SupportIntentRouter provider HTTP ' . $response->status() . ' (' . $provider['model'] . ')');
                 }
             } catch (\Throwable $e) {
-                Log::info('SupportIntentRouter fallback: ' . $e->getMessage());
+                Log::info('SupportIntentRouter fallback (' . $provider['model'] . '): ' . $e->getMessage());
+            }
+
+            if (! $succeeded && ! app()->runningUnitTests()) {
+                cache()->put($breakerKey, true, self::BREAKER_TTL_SECONDS);
             }
         }
 
@@ -121,6 +146,16 @@ PROMPT;
     {
         $baseUrl = rtrim((string) env('OPENAI_BASE_URL', 'https://api.vilao.ai/v1'), '/');
         $providers = [];
+
+        // Ưu tiên model nhanh, không suy luận (deepseek-v4.1-flash ~2s) để kịp trong ngân sách thời gian.
+        $contentKey = env('DEEPSEEK_KEY_CONTENT');
+        if (! empty($contentKey)) {
+            $providers[] = [
+                'base_url' => $baseUrl,
+                'key' => $contentKey,
+                'model' => env('DEEPSEEK_MODEL_ROUTER', 'deepseek-v4.1-flash'),
+            ];
+        }
 
         $deepseekKey = env('DEEPSEEK_KEY_MAIN');
         if (! empty($deepseekKey)) {

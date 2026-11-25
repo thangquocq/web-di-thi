@@ -1027,6 +1027,14 @@ class SupportAcademicOrchestrator
         }
         if (preg_match('/(lich hoc|thoi khoa bieu|tkb|hoc phong nao|phong nao|may gio hoc|hom nay hoc|mai hoc|ngay mai hoc|tuan nay hoc|co tiet|co ca)/', $norm)) {
             $intents[] = 'SCHEDULE';
+        } elseif (
+            // Câu hỏi lịch theo mốc thời gian: "Tuần này em có mấy buổi học?", "Thứ 5 em học gì?", "Mai có học không?"
+            // (không phụ thuộc thứ tự: "Em có mấy buổi học tuần này?" cũng khớp)
+            preg_match('/^(?=.*\b(hom nay|ngay mai|mai|tuan nay|tuan sau|tuan toi|thu [2-7]|thu (?:hai|ba|tu|nam|sau|bay)|t[2-7]|chu nhat)\b)(?=.*\b(hoc|buoi|tiet|ca hoc|lich|lop nao|mon nao)\b)/', $norm)
+            // Loại trừ câu hỏi chuyên cần / học phí / bài tập / điểm để không bắt nhầm sang lịch học
+            && ! preg_match('/\b(nghi|vang|hoc phi|hoc bong|hoc lai|thi lai|nop|deadline|bai tap|assignment|diem)\b/', $norm)
+        ) {
+            $intents[] = 'SCHEDULE';
         }
         if (preg_match('/(diem so|bang diem|diem cua|xem diem|diem bao nhieu|diem mon|duoc may diem|cham chua|co diem chua|diem thi|diem bai)/', $norm)) {
             $intents[] = 'GRADES';
@@ -1092,6 +1100,8 @@ class SupportAcademicOrchestrator
             'thay', 'co', 'giang', 'vien', 'giao', 'day', 'phu', 'trach', 'xem', 'diem', 'lich', 'buoi', 'ngay',
             'mai', 'hom', 'nay', 'tuan', 'vang', 'nghi', 'chuyen', 'can', 'bao', 'nhieu', 'may', 'khong', 'co', 'a',
             'the', 'con', 'thi', 'sao', 'duoc', 'chua', 'co', 'phong', 'ca', 'tiet',
+            // Từ chỉ thời gian / văn nói: "thứ" bỏ dấu thành "thu" từng khớp nhầm vào "giải THUật"
+            'thu', 'chu', 'nhat', 'sau', 'toi', 'truoc', 'qua', 'gio', 'sang', 'chieu', 'toi', 'ko', 'hok', 'nhe', 'ah', 'vay', 'nhung', 'dau',
         ];
 
         $queryTokens = array_values(array_unique(array_filter(
@@ -1115,7 +1125,12 @@ class SupportAcademicOrchestrator
             $hitCount = 0;
             foreach ($queryTokens as $qt) {
                 foreach ($subTokens as $st) {
-                    if ($qt === $st || (strlen($qt) >= 3 && strlen($st) >= 3 && (str_contains($st, $qt) || str_contains($qt, $st)))) {
+                    // Khớp một phần: từ >= 4 ký tự được khớp chuỗi con; từ 3 ký tự chỉ khớp ở CUỐI từ
+                    // (VD "sql" khớp "mysql") để tránh "thu" khớp nhầm "thuat" (giải thuật)
+                    $partial = function (string $short, string $long): bool {
+                        return strlen($short) >= 4 ? str_contains($long, $short) : (strlen($short) === 3 && str_ends_with($long, $short));
+                    };
+                    if ($qt === $st || (strlen($qt) >= 3 && strlen($st) >= 3 && ($partial($qt, $st) || $partial($st, $qt)))) {
                         $hitCount++;
                         break;
                     }
@@ -1127,7 +1142,8 @@ class SupportAcademicOrchestrator
                 // Ưu tiên lớp có nhiều từ khớp nhất và tỷ lệ phủ tên môn cao nhất
                 $score = ($hitCount * 10.0) + ($ratio * 10.0);
                 // Chấp nhận nếu khớp >= 2 từ hoặc khớp 1 từ đặc trưng dài >= 3 ký tự (VD: java, sql, mysql, laravel, sdlc, python...)
-                $singleStrongMatch = ($hitCount === 1 && count(array_filter($queryTokens, fn ($qt) => strlen($qt) >= 3 && str_contains($subName . ' ' . $className, $qt))) > 0);
+                // Từ phải khớp tới CUỐI một từ trong tên môn/lớp ("sql" khớp "mysql", nhưng "thu" không khớp "thuat")
+                $singleStrongMatch = ($hitCount === 1 && count(array_filter($queryTokens, fn ($qt) => strlen($qt) >= 3 && preg_match('/' . preg_quote($qt, '/') . '\b/', $subName . ' ' . $className))) > 0);
                 if ($hitCount >= 2 || $singleStrongMatch) {
                     $scored[] = ['class' => $c, 'score' => $score, 'hits' => $hitCount];
                 }
